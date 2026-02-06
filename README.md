@@ -57,7 +57,7 @@ cp .env.example .env
 
 3. Edit `.env` file and add your API keys:
 ```
-MODELSCOPE_API_KEY=ms-dd2baa58-4a47-448b-93c6-1a14869a170e
+MODELSCOPE_API_KEY=ms-********************************
 MODELSCOPE_BASE_URL=https://api-inference.modelscope.cn/v1
 MODELSCOPE_MODEL=Qwen/Qwen3-30B-A3B-Instruct-2507
 SERPER_API_KEY=your_serper_api_key_here  # Optional
