@@ -155,7 +155,7 @@ from openai import OpenAI
 
 client = OpenAI(
     base_url='https://api-inference.modelscope.cn/v1',
-    api_key='ms-dd2baa58-4a47-448b-93c6-1a14869a170e',
+    api_key='ms-*********************************',
 )
 
 response = client.chat.completions.create(
