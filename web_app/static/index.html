@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width:device-width, initial-scale=1" />
+  <title>Agent 验证</title>
+  <style>
+    :root {
+      --bg: #0a0b0f;
+      --card: #12141a;
+      --border: #1e2230;
+      --text: #e4e6ed;
+      --muted: #6b7280;
+      --accent: #22d3ee;
+      --accent-dim: rgba(34, 211, 238, 0.12);
+      --done: #4ade80;
+      --error: #f87171;
+      --llm-glow: rgba(139, 92, 246, 0.25);
+      --llm-fg: #a78bfa;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 15px;
+      line-height: 1.5;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .layout {
+      display: flex;
+      flex: 1;
+      min-height: 0;
+    }
+    .main {
+      flex: 1;
+      min-width: 280px;
+      min-height: 0;
+      overflow-y: scroll;
+      overflow-x: hidden;
+      padding: 1rem 1.25rem;
+    }
+    .main::-webkit-scrollbar { width: 8px; }
+    .main::-webkit-scrollbar-track { background: var(--bg); border-radius: 4px; }
+    .main::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+    .main::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+    .main { scrollbar-width: thin; scrollbar-color: var(--border) var(--bg); }
+    .resizer {
+      width: 6px;
+      background: var(--border);
+      cursor: col-resize;
+      flex-shrink: 0;
+    }
+    .resizer:hover { background: var(--accent); }
+    .terminal-panel {
+      width: 380px;
+      min-width: 260px;
+      max-width: 60%;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      background: #060608;
+      border-left: 1px solid rgba(34, 211, 238, 0.25);
+      box-shadow: -0 0 24px rgba(34, 211, 238, 0.06);
+      position: relative;
+    }
+    .terminal-panel::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0, 0, 0, 0.12) 2px,
+        rgba(0, 0, 0, 0.12) 4px
+      );
+      opacity: 0.6;
+    }
+    .terminal-header {
+      padding: 0.5rem 0.75rem;
+      font-size: 0.7rem;
+      color: var(--accent);
+      border-bottom: 1px solid rgba(34, 211, 238, 0.2);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      position: relative;
+      z-index: 1;
+    }
+    .terminal-header::before { content: "◇ "; opacity: 0.8; }
+    .terminal-body {
+      flex: 1;
+      overflow-y: scroll;
+      overflow-x: hidden;
+      padding: 0.65rem 0.75rem;
+      font-family: ui-monospace, "Cascadia Code", "Consolas", monospace;
+      font-size: 11px;
+      line-height: 1.5;
+      color: #94a3b8;
+      white-space: pre-wrap;
+      word-break: break-all;
+      position: relative;
+      z-index: 1;
+    }
+    .terminal-body::-webkit-scrollbar { width: 8px; }
+    .terminal-body::-webkit-scrollbar-track { background: #060608; border-radius: 4px; }
+    .terminal-body::-webkit-scrollbar-thumb { background: rgba(34, 211, 238, 0.3); border-radius: 4px; }
+    .terminal-body::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+    .terminal-body { scrollbar-width: thin; scrollbar-color: rgba(34, 211, 238, 0.4) #060608; }
+    .terminal-body:empty::before { content: "> 等待任务启动…"; color: rgba(148, 163, 184, 0.5); }
+    .terminal-line {
+      margin-bottom: 0.35rem;
+      padding: 0.2rem 0;
+      border-left: 2px solid transparent;
+      padding-left: 0.4rem;
+    }
+    .terminal-line[data-type="info"] { border-left-color: rgba(34, 211, 238, 0.5); }
+    .terminal-line[data-type="ok"]   { border-left-color: rgba(74, 222, 128, 0.5); }
+    .terminal-line[data-type="err"]  { border-left-color: rgba(248, 113, 113, 0.6); }
+    .terminal-line .term-prompt { color: var(--accent); margin-right: 0.35rem; }
+    .terminal-line .ts { color: #64748b; font-size: 10px; }
+    .terminal-line .step { color: #38bdf8; font-weight: 600; }
+    .terminal-line .status-done { color: #4ade80; }
+    .terminal-line .status-error { color: #f87171; }
+    .terminal-line .status-start { color: #fbbf24; }
+    .term-kv { color: #64748b; margin-left: 0.5rem; }
+    .term-kv .key { color: #94a3b8; }
+    .term-kv .val { color: #e2e8f0; word-break: break-all; }
+    .term-save { color: #4ade80; margin-top: 0.2rem; margin-left: 0.5rem; font-size: 10px; }
+    .term-save .path { color: #7dd3fc; }
+    .term-kv .val.path { color: #7dd3fc; }
+    .term-kv.term-llm .provider { color: var(--llm-fg); }
+    .term-kv.term-llm .path { color: #c4b5fd; }
+
+    h1 { font-size: 1.15rem; font-weight: 600; margin-bottom: 0.2rem; letter-spacing: 0.02em; }
+    .sub { color: var(--muted); font-size: 0.78rem; margin-bottom: 1rem; letter-spacing: 0.03em; }
+    .form { display: flex; flex-direction: column; gap: 0.6rem; margin-bottom: 1.5rem; }
+    .form label { display: block; color: var(--muted); font-size: 0.78rem; margin-bottom: 0.2rem; }
+    .form input, .form textarea {
+      width: 100%;
+      padding: 0.5rem 0.65rem;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 0.9rem;
+    }
+    .form input:focus, .form textarea:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-dim);
+    }
+    .form textarea { min-height: 60px; resize: vertical; }
+    .row { display: flex; gap: 0.75rem; align-items: flex-end; }
+    .row .form-group { flex: 1; }
+    .form-group.small { max-width: 90px; }
+    button {
+      padding: 0.55rem 1rem;
+      background: var(--accent);
+      color: var(--bg);
+      border: none;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 0.9rem;
+      cursor: pointer;
+    }
+    button:hover { opacity: 0.9; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .steps { margin-top: 1rem; }
+    .step {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 0.5rem;
+      background: var(--card);
+      overflow: hidden;
+      animation: stepIn 0.3s ease-out;
+    }
+    @keyframes stepIn {
+      from { opacity: 0; transform: translateY(-6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .step.running { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent-dim); }
+    .step.done .step-head .dot { background: var(--done); }
+    .step.error .step-head .dot { background: var(--error); }
+    .step-head {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.6rem;
+      padding: 0.6rem 0.85rem;
+      cursor: pointer;
+      user-select: none;
+    }
+    .step-head:hover { background: rgba(255,255,255,0.03); }
+    .step.running .step-head .dot { animation: pulse 1.2s ease-in-out infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent);
+      flex-shrink: 0;
+      margin-top: 0.35rem;
+    }
+    .step-head .step-body { flex: 1; min-width: 0; }
+    .step-id { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.15rem; }
+    .step-msg { font-weight: 500; font-size: 0.9rem; }
+    .step-meta { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.25rem; flex-wrap: wrap; }
+    .step-meta .files { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; }
+    .step-meta a.file-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      padding: 0.2rem 0.4rem;
+      background: var(--border);
+      border-radius: 4px;
+      color: var(--accent);
+      font-size: 0.75rem;
+      text-decoration: none;
+    }
+    .step-meta a.file-link:hover { background: var(--accent-dim); }
+    .step-meta .file-link svg { width: 14px; height: 14px; flex-shrink: 0; }
+    .step-toggle { color: var(--muted); font-size: 0.8rem; margin-left: auto; }
+    .step.expanded .step-toggle::before { content: "▼ "; }
+    .step:not(.expanded) .step-toggle::before { content: "▶ "; }
+    .step-content {
+      display: none;
+      padding: 0 0.85rem 0.85rem;
+      border-top: 1px solid var(--border);
+    }
+    .step.expanded .step-content { display: block; }
+    .step-content .tool-output {
+      margin-top: 0.5rem;
+      padding: 0.6rem;
+      background: #0a0a0c;
+      border-radius: 6px;
+      font-family: ui-monospace, monospace;
+      font-size: 0.8rem;
+      max-height: 240px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+      color: #a1a1aa;
+    }
+    .step-content .tool-output:empty { color: var(--muted); }
+    .step-content .tool-output:empty::after { content: "无额外输出"; }
+    .empty-state { color: var(--muted); text-align: center; padding: 1.5rem; font-size: 0.85rem; }
+
+    .footer {
+      margin-top: 2rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border);
+      font-size: 0.72rem;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <div class="main">
+      <h1>Agent 验证</h1>
+      <p class="sub">Agent + LLM · 新闻发现与事实核查</p>
+
+      <form class="form" id="form">
+        <div class="form-group">
+          <label>门户 URL</label>
+          <input type="url" name="portal_url" placeholder="https://apnews.com/" value="https://apnews.com/" readonly tabindex="-1" title="目前仅支持默认门户" id="portal_url_input" />
+        </div>
+        <div class="form-group">
+          <label>兴趣描述</label>
+          <textarea name="user_interest_desc" placeholder="我对…比较感兴趣">我对特朗普对外政策比较感兴趣</textarea>
+        </div>
+        <div class="row">
+          <div class="form-group small">
+            <label>最多篇数</label>
+            <input type="number" name="max_articles" min="1" max="10" value="1" />
+          </div>
+          <button type="submit" id="btn">开始运行</button>
+        </div>
+      </form>
+
+      <div class="steps" id="steps"></div>
+      <div class="empty-state" id="empty">填写参数 · 开始运行</div>
+
+      <footer class="footer" id="footer">
+        本页面使用免费 <strong>魔搭 API（ModelScope）</strong> 进行 LLM 推理（兴趣提取、正文清洗、声明识别与报告汇总），使用 <strong>Serper API</strong> 进行网络搜索以验证声明。
+      </footer>
+    </div>
+
+    <div class="resizer" id="resizer" title="拖动调节左右宽度"></div>
+    <div class="terminal-panel" id="terminalPanel">
+      <div class="terminal-header">日志</div>
+      <div class="terminal-body" id="terminal"></div>
+    </div>
+  </div>
+
+  <script>
+    const form = document.getElementById("form");
+    const btn = document.getElementById("btn");
+    const mainEl = document.querySelector(".main");
+    const stepsEl = document.getElementById("steps");
+    const emptyEl = document.getElementById("empty");
+    const terminalEl = document.getElementById("terminal");
+    const terminalPanel = document.getElementById("terminalPanel");
+    const resizer = document.getElementById("resizer");
+
+    function scrollTerminalToBottom() {
+      requestAnimationFrame(() => {
+        terminalEl.scrollTo({ top: terminalEl.scrollHeight, behavior: "smooth" });
+      });
+    }
+    function scrollStepsToLatest(stepEl) {
+      if (!mainEl || !stepEl) return;
+      requestAnimationFrame(() => {
+        stepEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      });
+    }
+    (function () {
+      var portalInput = document.getElementById("portal_url_input");
+      if (portalInput) {
+        portalInput.addEventListener("focus", function () {
+          this.blur();
+          alert("目前其他网站还没测试，暂时不支持。");
+        });
+        portalInput.addEventListener("click", function () {
+          this.blur();
+          alert("目前其他网站还没测试，暂时不支持。");
+        });
+      }
+    })();
+
+    function escapeHtml(s) {
+      const div = document.createElement("div");
+      div.textContent = s;
+      return div.innerHTML;
+    }
+
+    function appendTerminalLine(stepId, status, message, detail) {
+      const ts = new Date().toLocaleTimeString("zh-CN", { hour12: false });
+      let type = "log";
+      if (status === "done" || status === "info") type = "ok";
+      else if (status === "error") type = "err";
+      else if (status === "start") type = "start";
+
+      if (stepId === "log" && message) {
+        const block = document.createElement("div");
+        block.className = "terminal-line";
+        block.setAttribute("data-type", "info");
+        block.innerHTML = `<span class="term-prompt">></span><span class="ts">${escapeHtml(ts)}</span> <span class="step">[调用]</span> ${escapeHtml(message)}`;
+        terminalEl.appendChild(block);
+        scrollTerminalToBottom();
+        return;
+      }
+      if (stepId === "run_params" && detail && typeof detail === "object") {
+        const block = document.createElement("div");
+        block.className = "terminal-line";
+        block.setAttribute("data-type", "info");
+        block.innerHTML = `<span class="term-prompt">></span><span class="ts">${escapeHtml(ts)}</span> <span class="step">[PARAMS]</span><br>
+          <span class="term-kv"><span class="key">门户</span> <span class="val">${escapeHtml(detail.portal_url || "")}</span></span><br>
+          <span class="term-kv"><span class="key">兴趣</span> <span class="val">${escapeHtml(String(detail.user_interest_desc || "").slice(0, 80))}${(detail.user_interest_desc || "").length > 80 ? "…" : ""}</span></span><br>
+          <span class="term-kv"><span class="key">最多篇数</span> <span class="val">${escapeHtml(String(detail.max_articles ?? ""))}</span></span>`;
+        terminalEl.appendChild(block);
+        scrollTerminalToBottom();
+        return;
+      }
+      if (stepId === "run_dir" && detail && typeof detail === "object" && detail.run_dir) {
+        const block = document.createElement("div");
+        block.className = "terminal-line";
+        block.setAttribute("data-type", "info");
+        block.innerHTML = `<span class="term-prompt">></span><span class="ts">${escapeHtml(ts)}</span> <span class="step">[DIR]</span> 报告目录已创建<br>
+          <span class="term-save">保存到 <span class="path">${escapeHtml(detail.run_dir)}</span></span>`;
+        terminalEl.appendChild(block);
+        scrollTerminalToBottom();
+        return;
+      }
+      if (stepId === "complete" && detail && typeof detail === "object") {
+        const runDir = detail.run_dir || "";
+        const summaryPath = detail.summary_path || "";
+        const block = document.createElement("div");
+        block.className = "terminal-line";
+        block.setAttribute("data-type", "ok");
+        block.innerHTML = `<span class="term-prompt">></span><span class="ts">${escapeHtml(ts)}</span> <span class="step">[COMPLETE]</span> <span class="status-done">流程结束</span><br>
+          <span class="term-kv"><span class="key">报告目录</span> <span class="val path">${escapeHtml(runDir)}</span></span><br>
+          <span class="term-save">汇总报告 <span class="path">${escapeHtml(summaryPath)}</span></span>`;
+        terminalEl.appendChild(block);
+        scrollTerminalToBottom();
+        return;
+      }
+
+      let statusCls = "";
+      if (status === "done") statusCls = "status-done";
+      else if (status === "error") statusCls = "status-error";
+      else if (status === "start") statusCls = "status-start";
+
+      let extra = "";
+      if (detail != null && typeof detail === "object" && detail.files && detail.files.length) {
+        extra = detail.files.map(f => `<br><span class="term-save">→ 保存到 <span class="path">${escapeHtml((f.path || f).replace(/\\/g, "/"))}</span></span>`).join("");
+      } else if (detail != null && typeof detail !== "object") {
+        extra = " " + escapeHtml(String(detail).slice(0, 100)) + (String(detail).length > 100 ? "…" : "");
+      } else if (detail != null && typeof detail === "object" && !detail.files) {
+        const s = JSON.stringify(detail).slice(0, 100);
+        if (s !== "{}") extra = " " + escapeHtml(s) + (JSON.stringify(detail).length > 100 ? "…" : "");
+      }
+
+      const line = document.createElement("div");
+      line.className = "terminal-line";
+      line.setAttribute("data-type", type === "log" ? "" : type);
+      line.innerHTML = `<span class="term-prompt">></span><span class="ts">${escapeHtml(ts)}</span> <span class="step">${escapeHtml(stepId)}</span> <span class="${statusCls}">${escapeHtml(status)}</span> ${escapeHtml(message)}${extra}`;
+      terminalEl.appendChild(line);
+      scrollTerminalToBottom();
+    }
+
+    function addStep(stepId, status, message, detail) {
+      if (status === "ping") return;
+      if (stepId === "log" || stepId === "run_params" || stepId === "run_dir") return;
+      emptyEl.style.display = "none";
+      let step = stepsEl.querySelector(`[data-step-id="${stepId}"]`);
+      if (step) {
+        step.classList.remove("running");
+        if (status === "done" || status === "error") step.classList.add(status);
+        const msgEl = step.querySelector(".step-msg");
+        if (msgEl) msgEl.textContent = message;
+        updateStepMeta(step, detail);
+        const content = step.querySelector(".step-content");
+        if (content) updateStepContent(content, detail);
+        scrollStepsToLatest(step);
+        return;
+      }
+      step = document.createElement("div");
+      step.className = "step " + (status === "start" ? "running" : status === "done" ? "done" : status === "error" ? "error" : "");
+      step.setAttribute("data-step-id", stepId);
+      const idLabel = stepId.replace(/_/g, " ");
+      const files = (detail && typeof detail === "object" && detail.files) ? detail.files : [];
+      const toolOutput = getToolOutput(detail);
+      step.innerHTML = `
+        <div class="step-head">
+          <span class="dot"></span>
+          <div class="step-body">
+            <div class="step-id">${escapeHtml(idLabel)}</div>
+            <div class="step-msg">${escapeHtml(message)}</div>
+            <div class="step-meta">${renderFiles(files)}</div>
+          </div>
+          <span class="step-toggle">展开</span>
+        </div>
+        <div class="step-content">
+          <div class="tool-output">${escapeHtml(toolOutput)}</div>
+          <div class="step-files">${files.length ? "<div style='margin-top:0.5rem;font-size:0.8rem;color:var(--muted)'>文件：</div>" + renderFiles(files) : ""}</div>
+        </div>
+      `;
+      const content = step.querySelector(".step-content");
+      if (content) updateStepContent(content, detail);
+      step.querySelector(".step-head").addEventListener("click", () => {
+        if (step.querySelector(".step-toggle")) step.classList.toggle("expanded");
+      });
+      stepsEl.appendChild(step);
+      scrollStepsToLatest(step);
+    }
+
+    function getToolOutput(detail) {
+      if (detail == null) return "";
+      if (typeof detail === "string") return detail;
+      if (typeof detail === "object" && detail.tool_output) return detail.tool_output;
+      if (typeof detail === "object" && detail.files && !detail.tool_output) return "";
+      return typeof detail === "object" ? JSON.stringify(detail, null, 2) : String(detail);
+    }
+
+    function renderFiles(files) {
+      if (!files || !files.length) return "";
+      return files.map(f => {
+        const path = encodeURIComponent((f.path || f).replace(/\\/g, "/"));
+        const label = (typeof f === "object" ? f.label : f) || "file";
+        return `<a class="file-link" href="/api/file?path=${path}" target="_blank" rel="noopener" onclick="event.stopPropagation()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="M9 15h6"/></svg>
+          ${escapeHtml(label)}
+        </a>`;
+      }).join("");
+    }
+
+    function updateStepMeta(step, detail) {
+      const meta = step.querySelector(".step-meta");
+      if (!meta) return;
+      const files = (detail && typeof detail === "object" && detail.files) ? detail.files : [];
+      const existing = meta.querySelector(".files");
+      if (existing) existing.remove();
+      if (files.length) {
+        const wrap = document.createElement("div");
+        wrap.className = "files";
+        wrap.innerHTML = renderFiles(files);
+        meta.insertBefore(wrap, meta.firstChild);
+      }
+    }
+
+    function updateStepContent(contentEl, detail) {
+      if (!contentEl) return;
+      const toolEl = contentEl.querySelector(".tool-output");
+      if (toolEl) toolEl.textContent = getToolOutput(detail);
+      const filesEl = contentEl.querySelector(".step-files");
+      if (filesEl && detail && typeof detail === "object" && detail.files && detail.files.length) {
+        filesEl.innerHTML = "<div style='margin-top:0.5rem;font-size:0.8rem;color:var(--muted)'>文件：</div>" + renderFiles(detail.files);
+      }
+    }
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const portal_url = form.portal_url.value.trim() || "https://apnews.com/";
+      const user_interest_desc = form.user_interest_desc.value.trim() || "我对特朗普对外政策比较感兴趣";
+      const max_articles = Math.max(1, Math.min(10, parseInt(form.max_articles.value, 10) || 1));
+
+      btn.disabled = true;
+      stepsEl.innerHTML = "";
+      emptyEl.style.display = "block";
+      terminalEl.innerHTML = "";
+
+      try {
+        const res = await fetch("/run", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ portal_url, user_interest_desc, max_articles }),
+        });
+        if (!res.ok) throw new Error("启动失败");
+        appendTerminalLine("run", "start", "已发起运行", null);
+
+        const ev = new EventSource("/events");
+        ev.onmessage = (e) => {
+          const d = JSON.parse(e.data);
+          appendTerminalLine(d.step_id, d.status, d.message, d.detail);
+          addStep(d.step_id, d.status, d.message, d.detail);
+          if (d.step_id === "complete" || d.step_id === "error") {
+            ev.close();
+            btn.disabled = false;
+          }
+        };
+        ev.onerror = () => {
+          ev.close();
+          btn.disabled = false;
+        };
+      } catch (err) {
+        appendTerminalLine("error", "error", err.message, null);
+        btn.disabled = false;
+      }
+    });
+
+    (function initResizer() {
+      let w = terminalPanel.offsetWidth;
+      resizer.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        const startX = e.clientX;
+        const startW = terminalPanel.offsetWidth;
+        function move(e2) {
+          const dx = startX - e2.clientX;
+          let newW = startW + dx;
+          newW = Math.max(260, Math.min(window.innerWidth - 300, newW));
+          terminalPanel.style.width = newW + "px";
+          terminalPanel.style.maxWidth = "none";
+        }
+        function up() {
+          document.removeEventListener("mousemove", move);
+          document.removeEventListener("mouseup", up);
+        }
+        document.addEventListener("mousemove", move);
+        document.addEventListener("mouseup", up);
+      });
+    })();
+  </script>
+</body>
+</html>

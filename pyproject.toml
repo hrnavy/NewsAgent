@@ -1,0 +1,38 @@
+[project]
+name = "ai-blog-crew"
+version = "0.1.0"
+description = "AI-powered blog writing system using CrewAI with ModelScope API"
+authors = [
+    {name = "Your Name", email = "your.email@example.com"}
+]
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "crewai>=0.28.0",
+    "crewai-tools>=0.1.6",
+    "langchain-openai>=0.0.5",
+    "python-dotenv>=1.0.0",
+    "openai>=1.0.0",
+    "tavily-python>=0.5.0",
+    "crawl4ai>=0.4.0",
+    "maxim-py>=0.2.0",
+    "beautifulsoup4>=4.12.0",
+    "nest_asyncio>=1.6.0",
+    "pydantic>=2.0.0",
+    "flask>=3.1.2",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build]
+# Editable install: add project root to path so root-level scripts run
+dev-mode-dirs = ["."]
+
+[tool.hatch.build.targets.wheel]
+# No package named ai_blog_crew; ship web_app so uv add / editable build succeeds
+packages = ["web_app"]
+
+[dependency-groups]
+dev = []

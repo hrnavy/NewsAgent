@@ -1,0 +1,40 @@
+research:
+  description: |
+    Research the latest developments in AI agents and automation.
+    Focus on:
+    - Recent breakthroughs in AI agent technology
+    - Popular frameworks and tools
+    - Real-world applications and use cases
+    - Future trends and predictions
+    
+    Provide a comprehensive research summary with key points and insights.
+  expected_output: A detailed research report covering the latest AI agent developments, frameworks, and trends.
+  agent: researcher
+
+writing:
+  description: |
+    Using the research findings, write an engaging blog post about AI agents.
+    
+    Requirements:
+    - Catchy title
+    - Engaging introduction
+    - Well-structured body paragraphs
+    - Clear explanations of complex concepts
+    - Practical examples and use cases
+    - Conclusion with key takeaways
+    
+    The tone should be informative yet accessible to a general tech audience.
+  expected_output: A well-written blog post with a title, introduction, body, and conclusion about AI agents.
+  agent: writer
+
+editing:
+  description: |
+    Review and edit the blog post for:
+    - Grammar and spelling errors
+    - Clarity and flow
+    - Engagement and readability
+    - Factual accuracy
+    
+    Make necessary improvements while maintaining the original voice and style.
+  expected_output: A polished, error-free blog post ready for publication.
+  agent: editor
